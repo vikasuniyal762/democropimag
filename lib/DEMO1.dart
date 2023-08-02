@@ -14,6 +14,7 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
   CameraController? _cameraController;
   final ImagePicker _imagePicker = ImagePicker();
   File? _selectedImage;
+  List<Face> _detectedFaces = [];
 
   @override
   void initState() {
@@ -38,7 +39,7 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
     _cameraController?.dispose();
     super.dispose();
   }
-///PICK IMAGE
+
   void _pickImage() async {
     final pickedImage = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (pickedImage != null) {
@@ -58,14 +59,12 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
 
     // Create the face detector options if you want to customize the detection behavior.
     final faceDetectorOptions = FaceDetectorOptions(
-     // mode: FaceDetectorMode.accurate, // You can use 'fast' for faster detection
       performanceMode: FaceDetectorMode.accurate,
       enableContours: true, // Set to true if you want to detect facial contours as well
       enableLandmarks: true, // Set to true if you want to detect facial landmarks as well
     );
 
-    final options = FaceDetectorOptions();
-    final faceDetector = FaceDetector(options: options);
+    final faceDetector = FaceDetector(options: faceDetectorOptions);
 
     try {
       final List<Face> faces = await faceDetector.processImage(inputImage);
@@ -94,7 +93,7 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
 
   Future<File> _cropFaceImage(int left, int top, int width, int height) async {
     final originalImage = img.decodeImage(await _selectedImage!.readAsBytes());
-    final faceImage = img.copyCrop(originalImage!, x:left, y:top, width:width, height:height);
+    final faceImage = img.copyCrop(originalImage!, x: left, y: top, width: width, height: height);
     final croppedPath = _selectedImage!.path.replaceFirst('.jpg', '_cropped.jpg');
     return File(croppedPath).writeAsBytes(img.encodeJpg(faceImage));
   }
@@ -104,14 +103,30 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
     if (!_cameraController!.value.isInitialized) {
       return Container();
     }
+    final previewSize = _cameraController!.value.previewSize;
+
     return Scaffold(
       appBar: AppBar(title: Text('Face Detection')),
       body: Column(
         children: [
           Expanded(
             child: _selectedImage != null
-                ? Image.file(_selectedImage!)
-                : CameraPreview(_cameraController!),
+                ? Stack(
+              children: [
+                Image.file(_selectedImage!),
+                CustomPaint(
+                  painter: FacePainter(_detectedFaces),
+                ),
+              ],
+            )
+                : Stack(
+              children: [
+                CameraPreview(_cameraController!),
+                CustomPaint(
+                  painter: FacePainter(_detectedFaces),
+                ),
+              ],
+            ),
           ),
           ElevatedButton(
             onPressed: _pickImage,
@@ -123,6 +138,47 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class FacePainter extends CustomPainter {
+  final List<Face> faces;
+
+  FacePainter(this.faces);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double scaleX = size.width;
+    final double scaleY = size.height;
+
+    final Paint paint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    if (faces != null) {
+      for (var face in faces) {
+        final Rect boundingBox = _scaleRect(
+          rect: face.boundingBox,
+          imageSize: Size(scaleX, scaleY),
+        );
+        canvas.drawRect(boundingBox, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(FacePainter oldDelegate) {
+    return faces != oldDelegate.faces;
+  }
+
+  Rect _scaleRect({required Rect rect, required Size imageSize}) {
+    return Rect.fromLTRB(
+      rect.left * imageSize.width,
+      rect.top * imageSize.height,
+      rect.right * imageSize.width,
+      rect.bottom * imageSize.height,
     );
   }
 }
